@@ -1,64 +1,59 @@
-
+// index.js - Xion (Cosmos) ke Sei (EVM) Bridge
 require("dotenv").config();
 const { DirectSecp256k1HdWallet } = require("@cosmjs/proto-signing");
-const { SigningCosmWasmClient } = require("@cosmjs/cosmwasm-stargate");
+const { Registry } = require("@cosmjs/proto-signing");
+const { assertIsBroadcastTxSuccess, SigningStargateClient, coins } = require("@cosmjs/stargate");
 
 const {
   XION_MNEMONICS,
   RPC_XION,
   CONTRACT_ADDRESS,
-  EVM_RECEIVER,
-  AMOUNT,
-  DENOM,
-  SWAP_COUNT,
-  TX_DELAY_MS,
-  WALLET_DELAY_MS,
+  RECEIVER_EVM,
+  AMOUNT_UXION,
   LOOP,
-  LOOP_INTERVAL_MS
+  LOOP_INTERVAL_MS,
+  WALLET_DELAY_MS
 } = process.env;
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-async function bridge(walletMnemonic, index) {
+async function bridgeFromXionToSei(mnemonic, index) {
   try {
-    const wallet = await DirectSecp256k1HdWallet.fromMnemonic(walletMnemonic, { prefix: "xion" });
+    const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
+      prefix: "xion",
+    });
     const [account] = await wallet.getAccounts();
-
-    const client = await SigningCosmWasmClient.connectWithSigner(RPC_XION, wallet);
-
-    const amountInMicro = Math.floor(parseFloat(AMOUNT) * 1_000_000).toString();
 
     console.log(`\n[${index + 1}] 🔑 ${account.address}`);
 
-    for (let i = 0; i < Number(SWAP_COUNT); i++) {
-      console.log(`   🔁 Swap [${i + 1}/${SWAP_COUNT}]`);
+    const client = await SigningStargateClient.connectWithSigner(RPC_XION, wallet);
+    const msg = {
+      transfer_to_evm: {
+        evm_address: RECEIVER_EVM,
+      },
+    };
 
-      const msg = {
-        transfer_to_evm: {
-          evm_address: EVM_RECEIVER
-        }
-      };
+    const result = await client.execute(
+      account.address,
+      CONTRACT_ADDRESS,
+      msg,
+      "auto",
+      "",
+      coins(AMOUNT_UXION, "uxion")
+    );
 
-      const funds = [{
-        denom: DENOM,
-        amount: amountInMicro
-      }];
-
-      const result = await client.execute(account.address, CONTRACT_ADDRESS, msg, "auto", "", funds);
-
-      console.log(`   ✅ TX Hash: ${result.transactionHash}`);
-      await sleep(Number(TX_DELAY_MS));
-    }
-  } catch (err) {
-    console.error(`   ❌ Wallet ${index + 1} Error:`, err.message);
+    assertIsBroadcastTxSuccess(result);
+    console.log(`   ✅ TX confirmed! Hash: ${result.transactionHash}`);
+  } catch (e) {
+    console.error(`   ❌ Wallet ${index + 1} Error:`, e.message);
   }
 }
 
 async function runAllWallets() {
-  const wallets = XION_MNEMONICS.split("|||");
-  for (let i = 0; i < wallets.length; i++) {
-    await bridge(wallets[i], i);
-    if (i < wallets.length - 1) await sleep(Number(WALLET_DELAY_MS));
+  const mns = XION_MNEMONICS.split(",");
+  for (let i = 0; i < mns.length; i++) {
+    await bridgeFromXionToSei(mns[i], i);
+    if (i < mns.length - 1) await sleep(Number(WALLET_DELAY_MS));
   }
 }
 
@@ -72,6 +67,6 @@ async function runAllWallets() {
     }
   } else {
     await runAllWallets();
-    console.log("✅ Semua wallet selesai (no-loop).");
+    console.log("✅ Semua wallet selesai (no-loop).\n");
   }
 })();
