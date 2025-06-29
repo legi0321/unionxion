@@ -1,7 +1,6 @@
-// index.js - Xion (Cosmos) ke Sei (EVM) Bridge
+// index.js - Xion (Cosmos) ke Sei (EVM) Bridge with SWAP_COUNT
 require("dotenv").config();
 const { DirectSecp256k1HdWallet } = require("@cosmjs/proto-signing");
-const { Registry } = require("@cosmjs/proto-signing");
 const { assertIsBroadcastTxSuccess, SigningStargateClient, coins } = require("@cosmjs/stargate");
 
 const {
@@ -10,6 +9,7 @@ const {
   CONTRACT_ADDRESS,
   RECEIVER_EVM,
   AMOUNT_UXION,
+  SWAP_COUNT,
   LOOP,
   LOOP_INTERVAL_MS,
   WALLET_DELAY_MS
@@ -27,23 +27,29 @@ async function bridgeFromXionToSei(mnemonic, index) {
     console.log(`\n[${index + 1}] 🔑 ${account.address}`);
 
     const client = await SigningStargateClient.connectWithSigner(RPC_XION, wallet);
-    const msg = {
-      transfer_to_evm: {
-        evm_address: RECEIVER_EVM,
-      },
-    };
 
-    const result = await client.execute(
-      account.address,
-      CONTRACT_ADDRESS,
-      msg,
-      "auto",
-      "",
-      coins(AMOUNT_UXION, "uxion")
-    );
+    for (let i = 0; i < Number(SWAP_COUNT); i++) {
+      console.log(`   🔁 Swap [${i + 1}/${SWAP_COUNT}]`);
 
-    assertIsBroadcastTxSuccess(result);
-    console.log(`   ✅ TX confirmed! Hash: ${result.transactionHash}`);
+      const msg = {
+        transfer_to_evm: {
+          evm_address: RECEIVER_EVM,
+        },
+      };
+
+      const result = await client.execute(
+        account.address,
+        CONTRACT_ADDRESS,
+        msg,
+        "auto",
+        "",
+        coins(AMOUNT_UXION, "uxion")
+      );
+
+      assertIsBroadcastTxSuccess(result);
+      console.log(`   ✅ TX confirmed! Hash: ${result.transactionHash}`);
+      if (i < Number(SWAP_COUNT) - 1) await sleep(3000); // delay antar TX
+    }
   } catch (e) {
     console.error(`   ❌ Wallet ${index + 1} Error:`, e.message);
   }
